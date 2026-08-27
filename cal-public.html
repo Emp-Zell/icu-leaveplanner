@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Leave Calendar — ICU / NIVU</title>
+<style>
+  :root{
+    --ink:#1F2937;
+    --ink-soft:#5b6b72;
+    --paper:#F4FBFC;
+    --paper-raised:#FFFFFF;
+    --rail:#128293;
+    --rail-dark:#0B5563;
+    --rail-soft:#1a96a8;
+    --gold:#59C3D1;
+    --gold-soft:#d4eef1;
+    --sage:#128293;
+    --sage-soft:#d8f0f3;
+    --terra:#D9534F;
+    --terra-soft:#f6dcda;
+    --line:#dceef0;
+    --line-strong:#b9dce1;
+    --shadow: 0 1px 2px rgba(11,85,99,0.08), 0 4px 12px rgba(11,85,99,0.07);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    background:var(--paper);
+    color:var(--ink);
+    font-size:14px;
+    line-height:1.5;
+  }
+
+  /* ---------- Header ---------- */
+  .topbar{
+    background:var(--rail-dark);
+    color:#fff;
+    padding:14px 24px;
+    display:flex;
+    align-items:center;
+    gap:14px;
+    box-shadow:0 2px 8px rgba(11,85,99,0.18);
+  }
+  .topbar-brand .mark{
+    font-family:'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif;
+    font-size:19px; font-weight:600; color:#fff; letter-spacing:0.01em;
+  }
+  .topbar-brand .sub{font-size:10px; color:#a8d8de; margin-top:1px; letter-spacing:0.04em; text-transform:uppercase;}
+  .topbar-spacer{flex:1;}
+  .topbar-badge{
+    font-size:11px; background:rgba(255,255,255,0.12); color:#bde4e9;
+    border-radius:99px; padding:4px 12px; letter-spacing:0.04em;
+  }
+
+  /* ---------- Main content ---------- */
+  .main{padding:24px 26px 60px;}
+
+  /* ---------- Year bar ---------- */
+  .cal-year-bar{
+    display:flex; align-items:center; gap:14px; margin-bottom:20px; flex-wrap:wrap;
+  }
+  .cal-year-title{
+    font-family:'Iowan Old Style',Georgia,serif; font-size:26px; font-weight:600;
+    color:var(--rail);
+  }
+  .cal-year-nav{
+    all:unset; cursor:pointer; width:36px; height:36px; border-radius:8px;
+    background:var(--sage-soft); color:var(--rail); display:flex; align-items:center;
+    justify-content:center; font-size:19px; font-weight:800; transition:background .12s;
+  }
+  .cal-year-nav:hover{background:var(--gold-soft);}
+  .page-sub{color:var(--ink-soft); font-size:13px; margin:0 0 24px;}
+
+  .btn{
+    all:unset; cursor:pointer; display:inline-flex; align-items:center; gap:6px;
+    padding:9px 16px; border-radius:7px; font-size:13px; font-weight:600;
+    background:var(--rail); color:#fff; transition:background .12s;
+  }
+  .btn:hover{background:var(--rail-soft);}
+  .btn.gold{background:var(--gold); color:#0B5563;}
+  .btn.gold:hover{background:#42b0be;}
+  .btn:disabled{opacity:0.45; cursor:not-allowed;}
+
+  /* ---------- Month-block calendar ---------- */
+  .month-block{
+    background:#fff; border:1px solid var(--line-strong); border-radius:10px;
+    margin-bottom:22px; box-shadow:var(--shadow); overflow:hidden; min-width:0; max-width:100%;
+  }
+  .month-block-head{
+    display:flex; align-items:baseline; justify-content:space-between;
+    padding:12px 18px; background:var(--rail); color:#fff;
+  }
+  .month-block-head h3{
+    margin:0; font-family:'Iowan Old Style',Georgia,serif; font-size:18px; font-weight:600;
+  }
+  .month-block-head .mcount{font-size:12px; color:#bcd0d9;}
+  .month-grid-scroll{overflow:auto; max-height:445px; max-width:100%; position:relative;}
+  table.month-grid{border-collapse:separate; border-spacing:0; width:auto; font-size:11.5px;}
+  table.month-grid th, table.month-grid td{
+    border-right:1px solid #d7ecee; border-bottom:1px solid #d7ecee; text-align:center; padding:0;
+  }
+  table.month-grid .week-row th{
+    background:#d8f0f3; color:#0e6677; font-size:10.5px; font-weight:700; letter-spacing:0.03em;
+    padding:4px 0; position:sticky; top:0; z-index:2;
+  }
+  table.month-grid .dow-row th{
+    background:#eef9fa; color:var(--ink-soft); font-size:10px; font-weight:700;
+    padding:3px 0; position:sticky; top:23px; z-index:2;
+  }
+  table.month-grid .daynum-row th{
+    background:var(--rail); color:#fff; font-weight:700; font-size:10.5px;
+    padding:3px 0; position:sticky; top:42px; z-index:2; min-width:24px; width:24px;
+  }
+  table.month-grid .daynum-row th.outside{background:#cfe6e9; color:#7a9a9f;}
+  table.month-grid .daynum-row th.holiday{background:#c0392b; color:#fff;}
+  table.month-grid .daynum-row th.weekend-header{background:#d98c84; color:#fff;}
+  table.month-grid .count-row th{
+    background:#0a5c6e; color:rgba(255,255,255,0.85); font-weight:800; font-size:9.5px;
+    padding:2px 0; position:sticky; top:61px; z-index:2; min-width:24px; width:24px;
+  }
+  table.month-grid .count-row th.cnt-zero{ color:rgba(255,255,255,0.25); font-weight:400; }
+  table.month-grid .count-row th.cnt-high{ background:#c0392b; color:#fff; }
+  table.month-grid .count-row th.outside{ background:#09495a; color:rgba(255,255,255,0.15); }
+  table.month-grid .count-row .corner-cell{ background:#eef9fa; top:61px; }
+  table.month-grid .count-row .staff-name-head{ top:61px; font-size:9px; padding:2px 8px !important; }
+  table.month-grid .staff-name-head{
+    position:sticky; right:0; top:0; z-index:5; background:var(--rail-dark); color:#fff;
+    min-width:92px; width:92px; font-size:10.5px; font-weight:700; padding:4px 8px !important; text-align:left !important;
+    box-shadow:-2px 0 4px rgba(0,0,0,0.08);
+  }
+  table.month-grid .corner-cell{position:sticky; left:0; z-index:2; background:#eef9fa; min-width:0;}
+  table.month-grid .staffcell{width:24px; min-width:24px; height:24px;}
+  table.month-grid .staffcell.outside{background:#e3f1f3;}
+  table.month-grid .staffcell.holiday-col{background:#f6dcd9;}
+  table.month-grid .staffcell.weekend-col{background:#fbeae8;}
+  table.month-grid .staffcell.onleave{font-weight:700; font-size:10px;}
+  table.month-grid .staffcell.onleave-noncounting{font-size:10px; font-weight:700;}
+  table.month-grid .staff-name-col{
+    position:sticky; right:0; z-index:1; background:#fff; border-left:2px solid var(--line-strong);
+    text-align:left; padding:4px 8px; font-size:11.5px; font-weight:600; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis;
+    min-width:92px; width:92px; box-shadow:-2px 0 4px rgba(0,0,0,0.08);
+  }
+  table.month-grid tbody tr:nth-child(even) .staff-name-col{background:#faf8f2;}
+  table.month-grid .staff-name-col.empty-row-label{color:var(--ink-soft); font-weight:400; font-style:italic; font-size:11px;}
+  table.month-grid tbody tr:nth-child(even) td.staffcell:not(.outside):not(.holiday-col):not(.onleave):not(.onleave-noncounting){background:#fcfbf7;}
+
+  /* ---------- Legend ---------- */
+  .legend{display:flex; gap:18px; align-items:center; margin-top:10px; font-size:12px; color:var(--ink-soft); flex-wrap:wrap;}
+
+  /* ---------- Loading/error states ---------- */
+  .state-msg{
+    text-align:center; padding:60px 20px; color:var(--ink-soft);
+    font-size:14px;
+  }
+  .state-msg .icon{font-size:36px; margin-bottom:12px;}
+  .state-msg strong{display:block; color:var(--ink); font-size:16px; margin-bottom:6px;}
+
+  .spinner{
+    display:inline-block; width:22px; height:22px;
+    border:3px solid rgba(18,130,147,0.2); border-top-color:var(--rail);
+    border-radius:50%; animation:spin .7s linear infinite; vertical-align:middle; margin-right:8px;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  .error-banner{
+    background:#fff5f5; border:1px solid #fbc4c4; border-radius:8px;
+    padding:14px 18px; margin-bottom:20px; color:#7f1d1d; font-size:13px;
+    display:flex; align-items:flex-start; gap:10px;
+  }
+  .error-banner .eicon{font-size:18px; flex-shrink:0; margin-top:1px;}
+
+  ::-webkit-scrollbar{width:10px; height:10px;}
+  ::-webkit-scrollbar-thumb{background:var(--line-strong); border-radius:6px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-brand">
+    <div class="mark">Leave Planner</div>
+    <div class="sub">ICU / NIVU</div>
+  </div>
+  <div class="topbar-spacer"></div>
+  <span class="topbar-badge">📅 Calendar — Public View</span>
+</div>
+
+<div class="main">
+
+  <div class="cal-year-bar">
+    <button class="cal-year-nav" id="calYearPrev" title="Previous year">‹</button>
+    <div class="cal-year-title" id="calYearTitle">Calendar 2026</div>
+    <button class="cal-year-nav" id="calYearNext" title="Next year">›</button>
+  </div>
+  <p class="page-sub" id="calSub">Month-by-month view. Grey = outside month · Red = holiday · Coloured numbers = counting leave days · Pale P = non-counting day within leave.</p>
+
+  <div id="calendarContent">
+    <div class="state-msg">
+      <span class="spinner"></span> Loading leave data…
+    </div>
+  </div>
+
+  <div class="legend">
+    <span><span style="display:inline-block;width:13px;height:13px;border-radius:3px;margin-right:5px;vertical-align:-2px;background:#cfe6e9;border:1px solid var(--line-strong);"></span>Outside month</span>
+    <span><span style="display:inline-block;width:13px;height:13px;border-radius:3px;margin-right:5px;vertical-align:-2px;background:#c0392b;border:1px solid var(--line-strong);"></span>Holiday</span>
+    <span><span style="display:inline-block;width:13px;height:13px;border-radius:3px;margin-right:5px;vertical-align:-2px;background:#d98c84;border:1px solid var(--line-strong);"></span>Weekly off-day</span>
+    <span>Solid colour + number = counting leave day · Pale "P" = non-counting day within leave period.</span>
+  </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+/* ============================================================
+   Public Calendar — reads from Supabase, no login required.
+   Requires Supabase RLS to allow anon SELECT on:
+     lp_staff, lp_leave_log, lp_settings
+   ============================================================ */
+
+const SUPABASE_URL = 'https://tjzqewdjjusvibshcycd.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_Ry_5MHFwxDo0SNZ-h1cSRQ_6ttT9Fuz';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const MONTH_NAMES_FULL = ['January','February','March','April','May','June',
+                          'July','August','September','October','November','December'];
+const DOW_INITIAL      = ['M','T','W','T','F','S','S'];
+const DEFAULT_DOW      = [false,false,false,false,true,true,false]; // Fri+Sat off
+
+let calYear = new Date().getFullYear();
+
+/* ---------- UI state persistence (this tab only) ---------- */
+const UI_STATE_KEY = 'lp_public_ui_state_v1';
+function saveUiState(){
+  try{ sessionStorage.setItem(UI_STATE_KEY, JSON.stringify({ year: calYear })); }
+  catch(e){ /* sessionStorage unavailable — silently skip */ }
+}
+function loadUiState(){
+  try{ const raw = sessionStorage.getItem(UI_STATE_KEY); return raw ? JSON.parse(raw) : null; }
+  catch(e){ return null; }
+}
+(function restoreUiState(){
+  const saved = loadUiState();
+  if(saved && typeof saved.year === 'number') calYear = saved.year;
+})();
+
+/* ---------- State ---------- */
+const state = { staff:[], log:[], settings:{} };
+
+/* ---------- Date helpers ---------- */
+function toISO(d){
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function fromISO(s){ const [y,m,d]=s.split('-').map(Number); return new Date(y,m-1,d); }
+function jsDowToOurIndex(jsDow){ return jsDow===0 ? 6 : jsDow-1; }
+function mondayIndex(jsDow){ return jsDow===0 ? 6 : jsDow-1; }
+
+function getSettingsForYear(year){
+  return state.settings[String(year)] || {
+    entitlementDefault:30, nonCountingDow:DEFAULT_DOW.slice(), holidays:[]
+  };
+}
+function getHolidays(year){ return getSettingsForYear(year).holidays || []; }
+function getNonCountingDow(year){ return getSettingsForYear(year).nonCountingDow || DEFAULT_DOW.slice(); }
+
+function isNonCounting(dateObj, year){
+  const yr = year || dateObj.getFullYear();
+  const idx = jsDowToOurIndex(dateObj.getDay());
+  if(getNonCountingDow(yr)[idx]) return true;
+  const iso = toISO(dateObj);
+  return getHolidays(yr).some(h => h.date === iso);
+}
+
+/* ---------- Color helpers ---------- */
+function hexToRgb(hex){
+  hex = hex.replace('#','');
+  if(hex.length===3) hex = hex.split('').map(c=>c+c).join('');
+  const n = parseInt(hex,16);
+  return {r:(n>>16)&255, g:(n>>8)&255, b:n&255};
+}
+function lightenColor(hex, amount){
+  const {r,g,b} = hexToRgb(hex);
+  return `rgb(${Math.round(r+(255-r)*amount)},${Math.round(g+(255-g)*amount)},${Math.round(b+(255-b)*amount)})`;
+}
+function readableTextColor(hex){
+  const {r,g,b} = hexToRgb(hex);
+  return ((r*299+g*587+b*114)/1000) > 150 ? '#3a2e26' : '#ffffff';
+}
+
+/* ---------- Build weeks ---------- */
+function buildMonthWeeks(year, month){
+  const first = new Date(year, month, 1);
+  const startOffset = mondayIndex(first.getDay());
+  const weeks = [];
+  const cur = new Date(year, month, 1-startOffset);
+  for(let w=0; w<6; w++){
+    const week = [];
+    for(let d=0; d<7; d++){
+      week.push({date:new Date(cur), inMonth:cur.getMonth()===month});
+      cur.setDate(cur.getDate()+1);
+    }
+    weeks.push(week);
+  }
+  return weeks;
+}
+
+function staffHasLeaveInMonth(staffName, year, month){
+  const mStart = toISO(new Date(year,month,1));
+  const mEnd   = toISO(new Date(year,month+1,0));
+  return state.log
+    .filter(l => l.name===staffName && l.status==='Approved')
+    .some(l => l.start<=mEnd && l.end>=mStart);
+}
+
+/* ---------- Render ---------- */
+function renderCalendar(){
+  const yr = calYear;
+  document.getElementById('calYearTitle').textContent = `Calendar ${yr}`;
+
+  const container = document.getElementById('calendarContent');
+  container.innerHTML = '';
+
+  const allNamed = state.staff.filter(s => s.name);
+
+  if(!allNamed.length){
+    container.innerHTML = `<div class="state-msg"><div class="icon">📋</div><strong>No staff data</strong>No staff members found in the database.</div>`;
+    return;
+  }
+
+  for(let m=0; m<12; m++){
+    const weeks = buildMonthWeeks(yr, m);
+    const named = allNamed.filter(s => staffHasLeaveInMonth(s.name, yr, m));
+
+    const block = document.createElement('div');
+    block.className = 'month-block';
+
+    const head = document.createElement('div');
+    head.className = 'month-block-head';
+    head.innerHTML = `<h3>${MONTH_NAMES_FULL[m]} ${yr}</h3><span class="mcount">${named.length} staff on leave</span>`;
+    block.appendChild(head);
+
+    const scrollWrap = document.createElement('div');
+    scrollWrap.className = 'month-grid-scroll';
+    if(named.length > 15) scrollWrap.style.maxHeight = '445px';
+
+    const table = document.createElement('table');
+    table.className = 'month-grid';
+    const thead = document.createElement('thead');
+
+    // Pre-build leave counts per day for this month
+    const leaveCounts = {};
+    allNamed.forEach(s => {
+      state.log.filter(l=>l.name===s.name&&l.status==='Approved').forEach(entry => {
+        let cur = fromISO(entry.start);
+        const end = fromISO(entry.end);
+        while(cur <= end){
+          const iso = toISO(cur);
+          leaveCounts[iso] = (leaveCounts[iso]||0) + 1;
+          cur.setDate(cur.getDate()+1);
+        }
+      });
+    });
+
+    // Week row
+    const weekRow = document.createElement('tr'); weekRow.className='week-row';
+    const wc = document.createElement('th'); wc.className='corner-cell'; weekRow.appendChild(wc);
+    weeks.forEach((_,wi)=>{
+      const th = document.createElement('th'); th.colSpan=7; th.textContent=`Week ${wi+1}`; weekRow.appendChild(th);
+    });
+    const wsh = document.createElement('th'); wsh.className='staff-name-head'; wsh.textContent=`${named.length} staff`; weekRow.appendChild(wsh);
+    thead.appendChild(weekRow);
+
+    // DOW row
+    const dowRow = document.createElement('tr'); dowRow.className='dow-row';
+    const dc = document.createElement('th'); dc.className='corner-cell'; dowRow.appendChild(dc);
+    weeks.forEach(week=>week.forEach(d=>{
+      const th = document.createElement('th'); th.textContent=DOW_INITIAL[mondayIndex(d.date.getDay())]; dowRow.appendChild(th);
+    }));
+    const dsh = document.createElement('th'); dsh.className='staff-name-head'; dowRow.appendChild(dsh);
+    thead.appendChild(dowRow);
+
+    // Day number row
+    const dnRow = document.createElement('tr'); dnRow.className='daynum-row';
+    const dnc = document.createElement('th'); dnc.className='corner-cell'; dnRow.appendChild(dnc);
+    weeks.forEach(week=>week.forEach(dayObj=>{
+      const th = document.createElement('th');
+      th.textContent = dayObj.date.getDate();
+      if(!dayObj.inMonth){ th.classList.add('outside'); }
+      else {
+        const cy = dayObj.date.getFullYear(), iso = toISO(dayObj.date);
+        if(getHolidays(cy).some(h=>h.date===iso)) th.classList.add('holiday');
+        else if(isNonCounting(dayObj.date,cy)) th.classList.add('weekend-header');
+      }
+      dnRow.appendChild(th);
+    }));
+    const nht = document.createElement('th'); nht.className='staff-name-head'; nht.textContent='Staff'; dnRow.appendChild(nht);
+    thead.appendChild(dnRow);
+
+    // Count row
+    const cntRow = document.createElement('tr'); cntRow.className='count-row';
+    const cnc = document.createElement('th'); cnc.className='corner-cell'; cntRow.appendChild(cnc);
+    weeks.forEach(week=>week.forEach(dayObj=>{
+      const th = document.createElement('th');
+      if(!dayObj.inMonth){ th.classList.add('outside'); }
+      else {
+        const iso = toISO(dayObj.date), cnt = leaveCounts[iso]||0;
+        th.textContent = cnt>0 ? cnt : '·';
+        th.title = `${cnt} staff on leave`;
+        if(cnt===0) th.classList.add('cnt-zero');
+        else if(cnt>=5) th.classList.add('cnt-high');
+      }
+      cntRow.appendChild(th);
+    }));
+    const cnsh = document.createElement('th'); cnsh.className='staff-name-head'; cnsh.textContent='On leave'; cntRow.appendChild(cnsh);
+    thead.appendChild(cntRow);
+
+    table.appendChild(thead);
+    const tbody = document.createElement('tbody');
+
+    if(!named.length){
+      const tr = document.createElement('tr');
+      const ltd = document.createElement('td'); ltd.className='corner-cell'; tr.appendChild(ltd);
+      weeks.forEach(week=>week.forEach(dayObj=>{
+        const td = document.createElement('td'); td.className='staffcell';
+        if(!dayObj.inMonth){ td.classList.add('outside'); }
+        else {
+          const cy = dayObj.date.getFullYear(), iso = toISO(dayObj.date), hols = getHolidays(cy);
+          if(hols.some(h=>h.date===iso)){ td.classList.add('holiday-col'); }
+          else if(isNonCounting(dayObj.date,cy)) td.classList.add('weekend-col');
+        }
+        tr.appendChild(td);
+      }));
+      const ntd = document.createElement('td'); ntd.className='staff-name-col empty-row-label';
+      ntd.textContent='No leave this month'; tr.appendChild(ntd);
+      tbody.appendChild(tr);
+    } else {
+      named.forEach(s => {
+        const tr = document.createElement('tr');
+        const ltd = document.createElement('td'); ltd.className='corner-cell'; tr.appendChild(ltd);
+
+        const approved = state.log.filter(l=>l.name===s.name&&l.status==='Approved');
+        const staffColor = s.color || '#128293';
+        const lightColor = lightenColor(staffColor, 0.62);
+        const textColor  = readableTextColor(staffColor);
+        const displayName = s.shortName&&s.shortName.trim() ? s.shortName.trim() : s.name;
+
+        // Build day map
+        const dayMap = {};
+        approved.forEach(entry=>{
+          let counter=0, cur=fromISO(entry.start);
+          const end = fromISO(entry.end);
+          while(cur<=end){
+            const iso=toISO(cur), cy=cur.getFullYear(), counts=!isNonCounting(cur,cy);
+            if(counts) counter++;
+            dayMap[iso] = {num:counts?counter:null, isCounting:counts};
+            cur.setDate(cur.getDate()+1);
+          }
+        });
+
+        weeks.forEach(week=>week.forEach(dayObj=>{
+          const td = document.createElement('td'); td.className='staffcell';
+          if(!dayObj.inMonth){ td.classList.add('outside'); }
+          else {
+            const cy=dayObj.date.getFullYear(), iso=toISO(dayObj.date), info=dayMap[iso];
+            const hols=getHolidays(cy), isHol=hols.some(h=>h.date===iso);
+            if(info){
+              if(info.isCounting){
+                td.classList.add('onleave');
+                td.style.background = staffColor;
+                td.style.color = textColor;
+                td.textContent = info.num;
+                td.title = `${displayName} — leave day ${info.num}`;
+              } else {
+                td.classList.add('onleave-noncounting');
+                td.style.background = lightColor;
+                td.style.color = staffColor;
+                td.textContent = 'P';
+                td.title = `${displayName} — on leave (non-counting)`;
+              }
+            } else if(isHol){
+              td.classList.add('holiday-col');
+              const hol = hols.find(h=>h.date===iso);
+              td.title = hol ? (hol.name||'Holiday') : 'Holiday';
+            } else if(isNonCounting(dayObj.date,cy)){
+              td.classList.add('weekend-col');
+            }
+          }
+          tr.appendChild(td);
+        }));
+
+        const ntd = document.createElement('td'); ntd.className='staff-name-col';
+        ntd.textContent = displayName; ntd.title = s.name;
+        ntd.style.borderLeft = `4px solid ${staffColor}`;
+        tr.appendChild(ntd);
+        tbody.appendChild(tr);
+      });
+    }
+
+    table.appendChild(tbody);
+    scrollWrap.appendChild(table);
+    block.appendChild(scrollWrap);
+    container.appendChild(block);
+  }
+}
+
+/* ---------- Load from Supabase ---------- */
+async function loadAll(){
+  const container = document.getElementById('calendarContent');
+  container.innerHTML = `<div class="state-msg"><span class="spinner"></span> Loading leave data…</div>`;
+
+  const errors = [];
+
+  // Staff
+  try {
+    const res = await sb.from('lp_staff').select('*').order('sort_order');
+    if(res.error) throw res.error;
+    state.staff = res.data.map(r => ({
+      id:r.id, name:r.name, shortName:r.short_name,
+      staffId:r.staff_id, color:r.color, sortOrder:r.sort_order
+    }));
+  } catch(e){ errors.push('lp_staff: ' + (e.message||String(e))); }
+
+  // Leave log
+  try {
+    const res = await sb.from('lp_leave_log').select('*').order('start_date');
+    if(res.error) throw res.error;
+    state.log = res.data.map(r => ({
+      id:r.id, name:r.staff_name,
+      start:r.start_date, end:r.end_date,
+      status:r.status, notes:r.notes
+    }));
+  } catch(e){ errors.push('lp_leave_log: ' + (e.message||String(e))); }
+
+  // Settings
+  try {
+    const res = await sb.from('lp_settings').select('*');
+    if(res.error) throw res.error;
+    state.settings = {};
+    res.data.forEach(r => {
+      state.settings[String(r.year)] = {
+        entitlementDefault: r.entitlement_default,
+        nonCountingDow:     r.non_counting_dow,
+        holidays:           r.holidays || []
+      };
+    });
+  } catch(e){ errors.push('lp_settings: ' + (e.message||String(e))); }
+
+  if(errors.length){
+    const hint = errors.some(e => e.includes('row-level') || e.includes('permission') || e.includes('policy') || e.includes('JWT') || e.includes('anon'))
+      ? `<br><br><strong>This looks like a Supabase RLS (Row Level Security) issue.</strong><br>
+         In your Supabase dashboard → Table Editor → each table → <strong>RLS Policies</strong>, add a policy:<br>
+         <code style="background:#fff0f0;padding:2px 6px;border-radius:3px;font-size:12px;">
+           Allow anon SELECT — Target roles: anon — Policy: true
+         </code>`
+      : '';
+    container.innerHTML = `
+      <div class="error-banner">
+        <div class="eicon">⚠️</div>
+        <div>
+          <strong>Could not load data from Supabase</strong><br>
+          ${errors.map(e=>`<code style="font-size:11px;">${e}</code>`).join('<br>')}
+          ${hint}
+        </div>
+      </div>`;
+    return;
+  }
+
+  renderCalendar();
+  setupRealtime();
+  setupPolling();
+}
+
+/* ============================================================
+   LIVE SYNC — same mechanism as the staff-side planner:
+   Supabase Realtime pushes changes instantly (once enabled — see
+   note below); a 15s poll is a safety net so this page updates
+   for viewers even if Realtime isn't configured or misses a beat.
+   ============================================================ */
+let realtimeChannel = null;
+function setupRealtime(){
+  if(realtimeChannel) return;
+  realtimeChannel = sb.channel('leave-calendar-public-live')
+    .on('postgres_changes', { event:'*', schema:'public', table:'lp_staff' },
+        () => handleRemoteChange(reloadStaff))
+    .on('postgres_changes', { event:'*', schema:'public', table:'lp_leave_log' },
+        () => handleRemoteChange(reloadLog))
+    .on('postgres_changes', { event:'*', schema:'public', table:'lp_settings' },
+        () => handleRemoteChange(reloadSettings))
+    .subscribe((status) => {
+      if(status === 'CHANNEL_ERROR' || status === 'TIMED_OUT'){
+        console.warn('Realtime subscription problem:', status);
+      }
+    });
+}
+
+let _remoteChangeTimer = null;
+const _pendingReloads = new Set();
+function handleRemoteChange(reloadFn){
+  _pendingReloads.add(reloadFn);
+  clearTimeout(_remoteChangeTimer);
+  _remoteChangeTimer = setTimeout(async () => {
+    const fns = Array.from(_pendingReloads);
+    _pendingReloads.clear();
+    try {
+      await Promise.all(fns.map(fn => fn()));
+      _lastSignature = syncSignature();
+      renderCalendar();
+    } catch(e){ console.error('Live sync refresh failed:', e); }
+  }, 250);
+}
+
+async function reloadStaff(){
+  const res = await sb.from('lp_staff').select('*').order('sort_order');
+  if(res.error) throw res.error;
+  state.staff = res.data.map(r => ({
+    id:r.id, name:r.name, shortName:r.short_name,
+    staffId:r.staff_id, color:r.color, sortOrder:r.sort_order
+  }));
+}
+async function reloadLog(){
+  const res = await sb.from('lp_leave_log').select('*').order('start_date');
+  if(res.error) throw res.error;
+  state.log = res.data.map(r => ({
+    id:r.id, name:r.staff_name,
+    start:r.start_date, end:r.end_date,
+    status:r.status, notes:r.notes
+  }));
+}
+async function reloadSettings(){
+  const res = await sb.from('lp_settings').select('*');
+  if(res.error) throw res.error;
+  state.settings = {};
+  res.data.forEach(r => {
+    state.settings[String(r.year)] = {
+      entitlementDefault: r.entitlement_default,
+      nonCountingDow:     r.non_counting_dow,
+      holidays:           r.holidays || []
+    };
+  });
+}
+
+/* ---------- Polling fallback ---------- */
+let _pollTimer = null;
+let _lastSignature = null;
+function syncSignature(){
+  return JSON.stringify(state.staff.map(s=>[s.id,s.sortOrder,s.name,s.shortName,s.staffId,s.color])) + '|' +
+         JSON.stringify(state.log.map(l=>[l.id,l.status,l.start,l.end,l.notes])) + '|' +
+         JSON.stringify(state.settings);
+}
+async function pollForChanges(){
+  try{
+    if(_lastSignature === null) _lastSignature = syncSignature();
+    await Promise.all([reloadStaff(), reloadLog(), reloadSettings()]);
+    const sig = syncSignature();
+    if(sig !== _lastSignature){
+      _lastSignature = sig;
+      renderCalendar();
+    }
+  } catch(e){ console.warn('Poll refresh failed:', e); }
+}
+function setupPolling(){
+  _lastSignature = syncSignature();
+  if(_pollTimer) clearInterval(_pollTimer);
+  _pollTimer = setInterval(() => {
+    if(document.visibilityState === 'visible') pollForChanges();
+  }, 15000);
+  document.addEventListener('visibilitychange', () => {
+    if(document.visibilityState === 'visible') pollForChanges();
+  });
+}
+
+/* ---------- Year navigation ---------- */
+document.getElementById('calYearPrev').addEventListener('click', ()=>{ calYear--; renderCalendar(); saveUiState(); });
+document.getElementById('calYearNext').addEventListener('click', ()=>{ calYear++; renderCalendar(); saveUiState(); });
+
+/* ---------- Boot ---------- */
+loadAll();
+</script>
+</body>
+</html>
