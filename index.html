@@ -90,12 +90,12 @@
   }
   .month-block-head{
     display:flex; align-items:baseline; justify-content:space-between;
-    padding:12px 18px; background:var(--rail); color:#fff;
+    padding:12px 18px; background:var(--gold); color:#0B5563;
   }
   .month-block-head h3{
     margin:0; font-family:'Iowan Old Style',Georgia,serif; font-size:18px; font-weight:600;
   }
-  .month-block-head .mcount{font-size:12px; color:#bcd0d9;}
+  .month-block-head .mcount{font-size:12px; color:#0B5563; opacity:.75; font-weight:600;}
   .month-grid-scroll{overflow:auto; max-height:445px; max-width:100%; position:relative;}
   table.month-grid{border-collapse:separate; border-spacing:0; width:auto; font-size:11.5px;}
   table.month-grid th, table.month-grid td{
@@ -111,14 +111,14 @@
   }
   table.month-grid .daynum-row th{
     background:var(--rail); color:#fff; font-weight:700; font-size:10.5px;
-    padding:3px 0; position:sticky; top:42px; z-index:2; min-width:24px; width:24px;
+    padding:3px 0; position:sticky; top:42px; z-index:2; min-width:22px; width:22px;
   }
   table.month-grid .daynum-row th.outside{background:#cfe6e9; color:#7a9a9f;}
   table.month-grid .daynum-row th.holiday{background:#c0392b; color:#fff;}
   table.month-grid .daynum-row th.weekend-header{background:#d98c84; color:#fff;}
   table.month-grid .count-row th{
     background:#0a5c6e; color:rgba(255,255,255,0.85); font-weight:800; font-size:9.5px;
-    padding:2px 0; position:sticky; top:61px; z-index:2; min-width:24px; width:24px;
+    padding:2px 0; position:sticky; top:61px; z-index:2; min-width:22px; width:22px;
   }
   table.month-grid .count-row th.cnt-zero{ color:rgba(255,255,255,0.25); font-weight:400; }
   table.month-grid .count-row th.cnt-high{ background:#c0392b; color:#fff; }
@@ -131,7 +131,8 @@
     box-shadow:-2px 0 4px rgba(0,0,0,0.08);
   }
   table.month-grid .corner-cell{position:sticky; left:0; z-index:2; background:#eef9fa; min-width:0;}
-  table.month-grid .staffcell{width:24px; min-width:24px; height:24px;}
+  table.month-grid .staffcell{width:22px; min-width:22px; max-width:22px; height:22px; line-height:22px; padding:0; overflow:hidden;}
+  table.month-grid tbody td.staff-name-col{height:22px; line-height:22px; padding-top:0; padding-bottom:0;}
   table.month-grid .staffcell.outside{background:#e3f1f3;}
   table.month-grid .staffcell.holiday-col{background:#f6dcd9;}
   table.month-grid .staffcell.weekend-col{background:#fbeae8;}
@@ -289,10 +290,17 @@ function readableTextColor(hex){
   return ((r*299+g*587+b*114)/1000) > 150 ? '#3a2e26' : '#ffffff';
 }
 
+/* ---------- Same rules as the Leave Planner ---------- */
+// Separated staff are shown up to their separation year, then drop out
+function activeInYear(s, year){ return !s.sepDate || Number(String(s.sepDate).slice(0,4)) >= Number(year); }
+// Staff are listed in category order (no category count rows on this public page)
+const CATEGORY_ORDER = ['WM','SI_LOCAL','SI_FOREIGN','LOCAL','FOREIGN'];
+function categoryRank(s){ const i = CATEGORY_ORDER.indexOf(s.category); return i<0 ? CATEGORY_ORDER.length : i; }
+
 /* ---------- Build weeks ---------- */
 function buildMonthWeeks(year, month){
   const first = new Date(year, month, 1);
-  const startOffset = mondayIndex(first.getDay());
+  const startOffset = first.getDay(); // weeks run Sunday → Saturday
   const weeks = [];
   const cur = new Date(year, month, 1-startOffset);
   for(let w=0; w<6; w++){
@@ -322,7 +330,11 @@ function renderCalendar(){
   const container = document.getElementById('calendarContent');
   container.innerHTML = '';
 
-  const allNamed = state.staff.filter(s => s.name);
+  const allNamed = state.staff
+    .filter(s => s.name && activeInYear(s, yr))
+    .map((s,i) => ({s,i}))
+    .sort((a,b) => categoryRank(a.s)-categoryRank(b.s) || a.i-b.i)
+    .map(x => x.s);
 
   if(!allNamed.length){
     container.innerHTML = `<div class="state-msg"><div class="icon">📋</div><strong>No staff data</strong>No staff members found in the database.</div>`;
@@ -413,7 +425,7 @@ function renderCalendar(){
       }
       cntRow.appendChild(th);
     }));
-    const cnsh = document.createElement('th'); cnsh.className='staff-name-head'; cnsh.textContent='On leave'; cntRow.appendChild(cnsh);
+    const cnsh = document.createElement('th'); cnsh.className='staff-name-head'; cnsh.textContent='Total on leave'; cntRow.appendChild(cnsh);
     thead.appendChild(cntRow);
 
     table.appendChild(thead);
@@ -505,159 +517,69 @@ function renderCalendar(){
   }
 }
 
-/* ---------- Load from Supabase ---------- */
+/* ---------- Load from Supabase ----------
+   No login on this page, so it reads through one read-only database function,
+   lp_public_calendar(), which returns only what the calendar needs
+   (names, colours, category, separation date, approved leave dates, holidays).
+   ------------------------------------------------------------ */
+function applyPublicData(d){
+  state.staff = (d.staff||[]).map(r => ({
+    id:r.id, name:r.name, shortName:r.short_name, color:r.color, sortOrder:r.sort_order,
+    category:r.category||'', sepDate:r.sep_date||''
+  }));
+  state.log = (d.log||[]).map(r => ({
+    id:r.id, name:r.staff_name, start:r.start_date, end:r.end_date, status:r.status
+  }));
+  state.settings = {};
+  (d.settings||[]).forEach(r => {
+    state.settings[String(r.year)] = {
+      nonCountingDow: r.non_counting_dow,
+      holidays:       r.holidays || []
+    };
+  });
+}
+async function fetchPublicData(){
+  const res = await sb.rpc('lp_public_calendar');
+  if(res.error) throw res.error;
+  applyPublicData(res.data || {});
+}
+
 async function loadAll(){
   const container = document.getElementById('calendarContent');
   container.innerHTML = `<div class="state-msg"><span class="spinner"></span> Loading leave data…</div>`;
-
-  const errors = [];
-
-  // Staff
-  try {
-    const res = await sb.from('lp_staff').select('*').order('sort_order');
-    if(res.error) throw res.error;
-    state.staff = res.data.map(r => ({
-      id:r.id, name:r.name, shortName:r.short_name,
-      staffId:r.staff_id, color:r.color, sortOrder:r.sort_order
-    }));
-  } catch(e){ errors.push('lp_staff: ' + (e.message||String(e))); }
-
-  // Leave log
-  try {
-    const res = await sb.from('lp_leave_log').select('*').order('start_date');
-    if(res.error) throw res.error;
-    state.log = res.data.map(r => ({
-      id:r.id, name:r.staff_name,
-      start:r.start_date, end:r.end_date,
-      status:r.status, notes:r.notes
-    }));
-  } catch(e){ errors.push('lp_leave_log: ' + (e.message||String(e))); }
-
-  // Settings
-  try {
-    const res = await sb.from('lp_settings').select('*');
-    if(res.error) throw res.error;
-    state.settings = {};
-    res.data.forEach(r => {
-      state.settings[String(r.year)] = {
-        entitlementDefault: r.entitlement_default,
-        nonCountingDow:     r.non_counting_dow,
-        holidays:           r.holidays || []
-      };
-    });
-  } catch(e){ errors.push('lp_settings: ' + (e.message||String(e))); }
-
-  if(errors.length){
-    const hint = errors.some(e => e.includes('row-level') || e.includes('permission') || e.includes('policy') || e.includes('JWT') || e.includes('anon'))
-      ? `<br><br><strong>This looks like a Supabase RLS (Row Level Security) issue.</strong><br>
-         In your Supabase dashboard → Table Editor → each table → <strong>RLS Policies</strong>, add a policy:<br>
-         <code style="background:#fff0f0;padding:2px 6px;border-radius:3px;font-size:12px;">
-           Allow anon SELECT — Target roles: anon — Policy: true
-         </code>`
-      : '';
+  try{
+    await fetchPublicData();
+  } catch(e){
+    const msg = e.message || String(e);
     container.innerHTML = `
       <div class="error-banner">
         <div class="eicon">⚠️</div>
         <div>
-          <strong>Could not load data from Supabase</strong><br>
-          ${errors.map(e=>`<code style="font-size:11px;">${e}</code>`).join('<br>')}
-          ${hint}
+          <strong>Could not load the leave calendar</strong><br>
+          <code style="font-size:11px;">${msg.replace(/</g,'&lt;')}</code><br><br>
+          The public calendar reads through the <code>lp_public_calendar</code> database function.
+          If it says the function is missing or permission is denied, it still needs to be set up in Supabase.
         </div>
       </div>`;
     return;
   }
-
   renderCalendar();
-  setupRealtime();
   setupPolling();
 }
 
-/* ============================================================
-   LIVE SYNC — same mechanism as the staff-side planner:
-   Supabase Realtime pushes changes instantly (once enabled — see
-   note below); a 15s poll is a safety net so this page updates
-   for viewers even if Realtime isn't configured or misses a beat.
-   ============================================================ */
-let realtimeChannel = null;
-function setupRealtime(){
-  if(realtimeChannel) return;
-  realtimeChannel = sb.channel('leave-calendar-public-live')
-    .on('postgres_changes', { event:'*', schema:'public', table:'lp_staff' },
-        () => handleRemoteChange(reloadStaff))
-    .on('postgres_changes', { event:'*', schema:'public', table:'lp_leave_log' },
-        () => handleRemoteChange(reloadLog))
-    .on('postgres_changes', { event:'*', schema:'public', table:'lp_settings' },
-        () => handleRemoteChange(reloadSettings))
-    .subscribe((status) => {
-      if(status === 'CHANNEL_ERROR' || status === 'TIMED_OUT'){
-        console.warn('Realtime subscription problem:', status);
-      }
-    });
-}
-
-let _remoteChangeTimer = null;
-const _pendingReloads = new Set();
-function handleRemoteChange(reloadFn){
-  _pendingReloads.add(reloadFn);
-  clearTimeout(_remoteChangeTimer);
-  _remoteChangeTimer = setTimeout(async () => {
-    const fns = Array.from(_pendingReloads);
-    _pendingReloads.clear();
-    try {
-      await Promise.all(fns.map(fn => fn()));
-      _lastSignature = syncSignature();
-      renderCalendar();
-    } catch(e){ console.error('Live sync refresh failed:', e); }
-  }, 250);
-}
-
-async function reloadStaff(){
-  const res = await sb.from('lp_staff').select('*').order('sort_order');
-  if(res.error) throw res.error;
-  state.staff = res.data.map(r => ({
-    id:r.id, name:r.name, shortName:r.short_name,
-    staffId:r.staff_id, color:r.color, sortOrder:r.sort_order
-  }));
-}
-async function reloadLog(){
-  const res = await sb.from('lp_leave_log').select('*').order('start_date');
-  if(res.error) throw res.error;
-  state.log = res.data.map(r => ({
-    id:r.id, name:r.staff_name,
-    start:r.start_date, end:r.end_date,
-    status:r.status, notes:r.notes
-  }));
-}
-async function reloadSettings(){
-  const res = await sb.from('lp_settings').select('*');
-  if(res.error) throw res.error;
-  state.settings = {};
-  res.data.forEach(r => {
-    state.settings[String(r.year)] = {
-      entitlementDefault: r.entitlement_default,
-      nonCountingDow:     r.non_counting_dow,
-      holidays:           r.holidays || []
-    };
-  });
-}
-
-/* ---------- Polling fallback ---------- */
+/* ---------- Live updates: re-check every 15 s while the page is open ---------- */
 let _pollTimer = null;
 let _lastSignature = null;
 function syncSignature(){
-  return JSON.stringify(state.staff.map(s=>[s.id,s.sortOrder,s.name,s.shortName,s.staffId,s.color])) + '|' +
-         JSON.stringify(state.log.map(l=>[l.id,l.status,l.start,l.end,l.notes])) + '|' +
+  return JSON.stringify(state.staff.map(s=>[s.id,s.sortOrder,s.name,s.shortName,s.color,s.category,s.sepDate])) + '|' +
+         JSON.stringify(state.log.map(l=>[l.id,l.status,l.start,l.end])) + '|' +
          JSON.stringify(state.settings);
 }
 async function pollForChanges(){
   try{
-    if(_lastSignature === null) _lastSignature = syncSignature();
-    await Promise.all([reloadStaff(), reloadLog(), reloadSettings()]);
+    await fetchPublicData();
     const sig = syncSignature();
-    if(sig !== _lastSignature){
-      _lastSignature = sig;
-      renderCalendar();
-    }
+    if(sig !== _lastSignature){ _lastSignature = sig; renderCalendar(); }
   } catch(e){ console.warn('Poll refresh failed:', e); }
 }
 function setupPolling(){
